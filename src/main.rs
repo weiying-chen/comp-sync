@@ -5,17 +5,25 @@ use std::io::{self, Write};
 use std::path::Path;
 
 // Function to update file content based on the import path replacements
-fn update_file_content(src_file: &Path, old_alias: &str, new_alias: &str) -> io::Result<String> {
-    // Read the file content
+fn update_file_content(src_file: &Path, replacements: &[(String, String)]) -> io::Result<String> {
     let content = fs::read_to_string(src_file)?;
+    let mut updated_content = content.clone();
 
-    // Update the import paths
-    let re = Regex::new(&format!(r#"['"]{}([^'"]+)['"]"#, regex::escape(old_alias))).unwrap();
-    let updated_content = re
-        .replace_all(&content, |caps: &regex::Captures| {
-            format!("'{}{}'", new_alias, &caps[1])
-        })
-        .to_string();
+    for (old_alias, new_alias) in replacements {
+        // Enhanced regex pattern to handle quotes, optional whitespace, and varying formats
+        let re = Regex::new(&format!(
+            r#"['"]\s*{}\s*([^'"]*)['"]"#,
+            regex::escape(old_alias)
+        ))
+        .unwrap();
+
+        // Replace matching import paths
+        updated_content = re
+            .replace_all(&updated_content, |caps: &regex::Captures| {
+                format!("'{}{}'", new_alias, &caps[1])
+            })
+            .to_string();
+    }
 
     Ok(updated_content)
 }
@@ -48,8 +56,7 @@ fn copy_file(
 fn process_files(
     src_dir: &str,
     target_dir: &str,
-    old_alias: &str,
-    new_alias: &str,
+    replacements: &[(String, String)],
 ) -> io::Result<()> {
     let target_dir_path = Path::new(target_dir);
 
@@ -58,7 +65,7 @@ fn process_files(
         match entry {
             Ok(path) => {
                 // Update the file content
-                let updated_content = update_file_content(&path, old_alias, new_alias)?;
+                let updated_content = update_file_content(&path, replacements)?;
 
                 // Copy the updated content to the target directory
                 copy_file(&updated_content, &path, target_dir_path, src_dir)?;
@@ -74,12 +81,14 @@ fn main() {
     let src_dir = "/home/weiying-chen/node/comps/src/components"; // Source directory
     let target_dir = "/home/weiying-chen/node/aeonverse/packages/ui/src/custom"; // Target directory
 
-    // Define the old and new import aliases without trailing slashes
-    let old_alias = "@/components";
-    let new_alias = "@repo/ui/custom";
+    // Define the import path replacements
+    let replacements = vec![
+        ("@/components".to_string(), "@repo/ui/custom".to_string()),
+        ("@/utils".to_string(), "@repo/ui/lib/utils".to_string()),
+    ];
 
     // Run the file processing function
-    match process_files(src_dir, target_dir, old_alias, new_alias) {
+    match process_files(src_dir, target_dir, &replacements) {
         Ok(_) => println!("All files processed successfully."),
         Err(e) => eprintln!("Error processing files: {:?}", e),
     }
